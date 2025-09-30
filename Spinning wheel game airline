@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Category Spinning Wheel</title>
+<style>
+  body { text-align:center; font-family: Arial, sans-serif; position: relative; }
+  canvas { display: block; margin: 20px auto; border: 2px solid #000; }
+  button, input { display: block; margin: 10px auto; padding: 8px; font-size: 16px; }
+  #questionDisplay { font-size: 20px; font-weight: bold; margin-top: 20px; }
+  #confettiCanvas { position: absolute; top:0; left:0; pointer-events: none; }
+  #categoryInputs { margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h2>Category Spinning Wheel</h2>
+
+<canvas id="wheelCanvas" width="400" height="400"></canvas>
+<canvas id="confettiCanvas" width="400" height="400"></canvas>
+
+<button id="spinBtn">Spin the Wheel</button>
+
+<h3>Add/Edit Categories</h3>
+<div id="categoryInputs">
+  <input type="text" id="categoryName" placeholder="Category Name">
+  <input type="text" id="categoryQuestions" placeholder="Questions (comma separated)">
+  <button id="addCategoryBtn">Add/Update Category</button>
+</div>
+
+<select id="categorySelect">
+  <option value="">--Select Category--</option>
+</select>
+
+<div id="questionDisplay"></div>
+
+<script>
+// ---------------- Wheel Setup ----------------
+const canvas = document.getElementById("wheelCanvas");
+const ctx = canvas.getContext("2d");
+const confettiCanvas = document.getElementById("confettiCanvas");
+const confettiCtx = confettiCanvas.getContext("2d");
+const centerX = canvas.width / 2;
+const centerY = canvas.height / 2;
+const radius = 150;
+
+let categories = {};
+let segments = [];
+let angle = 0;
+let spinning = false;
+
+// Shades of blue
+const colors = ["#003f5c", "#2f4b7c", "#665191", "#a05195", "#d45087", "#f95d6a", "#ff7c43", "#ffa600"];
+
+// Airplane sound
+const airplaneSound = new Audio("https://www.soundjay.com/transportation/sounds/airplane-takeoff-01.mp3");
+
+// ---------------- Draw Wheel ----------------
+function drawWheel() {
+    if(!segments.length) return;
+    const segmentAngle = (2 * Math.PI) / segments.length;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (let i = 0; i < segments.length; i++) {
+        const startAngle = angle + i * segmentAngle;
+        const endAngle = startAngle + segmentAngle;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+        ctx.closePath();
+
+        // Blue shades
+        let shadeFactor = 0.7 + 0.3*(i/segments.length);
+        ctx.fillStyle = shadeColor("#3366ff", shadeFactor);
+        ctx.fill();
+
+        // Category text
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(startAngle + segmentAngle / 2);
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#fff";
+        ctx.font = "14px Arial";
+        ctx.fillText(segments[i], radius - 10, 5);
+        ctx.restore();
+    }
+
+    // Center circle
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.stroke();
+
+    // Pointer
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - radius - 10);
+    ctx.lineTo(centerX - 10, centerY - radius + 20);
+    ctx.lineTo(centerX + 10, centerY - radius + 20);
+    ctx.closePath();
+    ctx.fillStyle = "black";
+    ctx.fill();
+}
+
+// ---------------- Helpers ----------------
+function shadeColor(color, percent) {
+    const f = parseInt(color.slice(1),16);
+    const t = percent<1?0:255;
+    const p = percent<1?percent:percent-1;
+    const R = f>>16;
+    const G = f>>8&0x00FF;
+    const B = f&0x0000FF;
+    return "#" + (0x1000000 + (Math.round((t-R)*p)+R)*0x10000 + (Math.round((t-G)*p)+G)*0x100 + (Math.round((t-B)*p)+B)).toString(16).slice(1);
+}
+
+// ---------------- Confetti ----------------
+let confettiParticles = [];
+function createConfetti() {
+    confettiParticles = [];
+    for (let i = 0; i < 100; i++) {
+        confettiParticles.push({
+            x: Math.random() * confettiCanvas.width,
+            y: Math.random() * confettiCanvas.height - confettiCanvas.height,
+            r: Math.random() * 5 + 2,
+            color: colors[Math.floor(Math.random()*colors.length)],
+            speed: Math.random() * 5 + 2,
+            tilt: Math.random() * 10 - 5
+        });
+    }
+}
+
+function drawConfetti() {
+    confettiCtx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+    confettiParticles.forEach(p => {
+        confettiCtx.beginPath();
+        confettiCtx.fillStyle = p.color;
+        confettiCtx.fillRect(p.x, p.y, p.r, p.r*0.5);
+        p.y += p.speed;
+        p.x += Math.sin(p.tilt);
+        if (p.y > confettiCanvas.height) {
+            p.y = -10;
+            p.x = Math.random() * confettiCanvas.width;
+        }
+    });
+}
+
+// ---------------- Spin Wheel ----------------
+function spinWheel() {
+    if (spinning || !segments.length) return;
+    spinning = true;
+    airplaneSound.currentTime = 0;
+    airplaneSound.play();
+
+    let velocity = Math.random() * 0.3 + 0.3;
+    const friction = 0.985;
+
+    function animate() {
+        angle += velocity;
+        angle %= 2 * Math.PI;
+        velocity *= friction;
+        drawWheel();
+        drawConfetti();
+
+        if (velocity > 0.002) {
+            requestAnimationFrame(animate);
+        } else {
+            spinning = false;
+            const segmentAngle = (2 * Math.PI) / segments.length;
+            const winningIndex = Math.floor(((2 * Math.PI - angle + segmentAngle/2) % (2 * Math.PI)) / segmentAngle);
+
+            // Confetti for 2 seconds
+            createConfetti();
+            let confettiTime = 0;
+            const confettiInterval = setInterval(()=>{
+                drawConfetti();
+                confettiTime += 50;
+                if(confettiTime > 2000){
+                    clearInterval(confettiInterval);
+                    document.getElementById("questionDisplay").textContent = segments[winningIndex];
+
+                    // Show question for 15 seconds
+                    setTimeout(()=>{
+                        document.getElementById("questionDisplay").textContent = "";
+                    },15000);
+                }
+            },50);
+        }
+    }
+
+    animate();
+}
+
+// ---------------- Add/Select Categories ----------------
+const categorySelect = document.getElementById("categorySelect");
+
+document.getElementById("addCategoryBtn").addEventListener("click", ()=>{
+    const name = document.getElementById("categoryName").value.trim();
+    const questions = document.getElementById("categoryQuestions").value.trim();
+    if(name && questions){
+        categories[name] = questions.split(",").map(q=>q.trim());
+        updateCategoryOptions();
+    }
+});
+
+function updateCategoryOptions(){
+    categorySelect.innerHTML = '<option value="">--Select Category--</option>';
+    for(const cat in categories){
+        const opt = document.createElement("option");
+        opt.value = cat;
+        opt.textContent = cat;
+        categorySelect.appendChild(opt);
+    }
+}
+
+categorySelect.addEventListener("change", ()=>{
+    const cat = categorySelect.value;
+    if(cat && categories[cat]){
+        segments = [...categories[cat]];
+        angle = 0;
+        drawWheel();
+    }
+});
+
+// ---------------- Initialize ----------------
+drawWheel();
+setInterval(drawConfetti, 50);
+document.getElementById("spinBtn").addEventListener("click", spinWheel);
+</script>
+
+</body>
+</html>
