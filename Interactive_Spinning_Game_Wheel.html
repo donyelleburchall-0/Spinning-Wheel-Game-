@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Spinning Game Wheel</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f4f4f4; }
+    #wheelCanvas { margin: 20px auto; display: block; }
+    button { padding: 8px 15px; font-size: 14px; margin: 5px; cursor: pointer; }
+    #questionBox { margin-top: 20px; font-size: 20px; font-weight: bold; }
+    #setup { margin: 20px auto; width: 90%; max-width: 650px; background: white; padding: 20px; border-radius: 10px; }
+    select, input { padding: 8px; margin: 5px; }
+    .category { margin: 10px 0; }
+    .category-header { background: #ddd; padding: 8px; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: left; }
+    .questions { display: none; margin-top: 5px; padding-left: 15px; }
+    .questions li { margin: 4px 0; background: #f9f9f9; padding: 5px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+    .questions li button { background: red; color: white; border: none; border-radius: 4px; padding: 3px 6px; font-size: 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🎡 Game Wheel</h1>
+
+  <!-- Setup Section -->
+  <div id="setup">
+    <h2>Setup Questions</h2>
+    <p>Add questions to each category:</p>
+    <select id="categorySelect"></select>
+    <input type="text" id="questionInput" placeholder="Type your question">
+    <button onclick="addQuestion()">Add Question</button>
+    
+    <div style="margin-top:15px;">
+      <button onclick="exportQuestions()">Export Questions</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importQuestions(event)">
+      <button onclick="document.getElementById('importFile').click()">Import Questions</button>
+      <button onclick="clearQuestions()" style="background:red;color:white;">Clear All Questions</button>
+    </div>
+
+    <div id="questionList"></div>
+  </div>
+
+  <!-- Wheel -->
+  <canvas id="wheelCanvas" width="500" height="500"></canvas><br>
+  <button onclick="spinWheel()" style="font-size:16px;">Spin the Wheel!</button>
+  <button onclick="resetWheel()" style="font-size:16px; background:#4CAF50; color:white;">Reset Wheel</button>
+
+  <div id="questionBox"></div>
+
+  <!-- Airplane Sound -->
+  <audio id="airplaneSound" src="https://www.orangefreesounds.com/wp-content/uploads/2019/06/Commercial-plane-take-off.mp3"></audio>
+
+  <!-- Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <script>
+    const categories = ["Airline", "Airport", "Travel", "Office", "Hidden Disabilities"];
+    let questions = JSON.parse(localStorage.getItem("wheelQuestions")) || {
+      "Airline": [], "Airport": [], "Travel": [], "Office": [], "Hidden Disabilities": []
+    };
+
+    function saveQuestions() { localStorage.setItem("wheelQuestions", JSON.stringify(questions)); }
+    function exportQuestions() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(questions, null, 2));
+      const a = document.createElement("a");
+      a.href = dataStr;
+      a.download = "gamewheel-questions.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    function importQuestions(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          for (let c of categories) { if (Array.isArray(imported[c])) { questions[c] = imported[c]; } }
+          saveQuestions(); renderQuestionList();
+          alert("Questions imported successfully!");
+        } catch { alert("Invalid file format."); }
+      };
+      reader.readAsText(file);
+    }
+
+    const categorySelect = document.getElementById("categorySelect");
+    categories.forEach(c => { let opt = document.createElement("option"); opt.value = c; opt.textContent = c; categorySelect.appendChild(opt); });
+
+    function addQuestion() { const cat = categorySelect.value; const q = document.getElementById("questionInput").value.trim();
+      if (q) { questions[cat].push(q); saveQuestions(); document.getElementById("questionInput").value = ""; renderQuestionList(); } }
+    function deleteQuestion(cat, index) { questions[cat].splice(index, 1); saveQuestions(); renderQuestionList(); }
+    function clearQuestions() { if (confirm("Are you sure you want to delete ALL questions?")) { questions = {"Airline": [], "Airport": [], "Travel": [], "Office": [], "Hidden Disabilities": []}; saveQuestions(); renderQuestionList(); } }
+
+    function renderQuestionList() {
+      let container = document.getElementById("questionList"); container.innerHTML = "";
+      for (let c of categories) {
+        let catDiv = document.createElement("div"); catDiv.className = "category";
+        let header = document.createElement("div"); header.className = "category-header";
+        header.textContent = c + ` (${questions[c].length})`;
+        header.onclick = () => { qDiv.style.display = qDiv.style.display === "none" ? "block" : "none"; };
+        let qDiv = document.createElement("ul"); qDiv.className = "questions"; qDiv.style.display = "none";
+        questions[c].forEach((q,i)=>{ let qItem = document.createElement("li"); qItem.innerHTML = `<span>${q}</span> <button onclick="deleteQuestion('${c}', ${i})">Delete</button>`; qDiv.appendChild(qItem); });
+        catDiv.appendChild(header); catDiv.appendChild(qDiv); container.appendChild(catDiv);
+      }
+    }
+
+    const canvas = document.getElementById("wheelCanvas"); const ctx = canvas.getContext("2d");
+    const size = canvas.width; const center = size/2; const arc = (2*Math.PI)/categories.length; let angle=0; let spinning=false;
+
+    function drawWheel() {
+      ctx.clearRect(0,0,size,size);
+      categories.forEach((cat,i)=>{
+        ctx.beginPath(); ctx.moveTo(center,center);
+        ctx.fillStyle = `hsl(${i*72},70%,60%)`;
+        ctx.arc(center,center,center-10,i*arc+angle,(i+1)*arc+angle); ctx.fill();
+        ctx.save(); ctx.translate(center,center); ctx.rotate((i+0.5)*arc+angle); ctx.fillStyle="white"; ctx.font="18px Arial"; ctx.textAlign="right"; ctx.fillText(cat,center-20,10); ctx.restore();
+      });
+    }
+
+    function fadeOutSound(sound, fadeDuration) {
+      const stepTime = 50; const steps = fadeDuration / stepTime; let volumeStep = sound.volume / steps;
+      const fadeInterval = setInterval(()=>{ sound.volume -= volumeStep; if(sound.volume<=0){ sound.volume=0; sound.pause(); sound.currentTime=0; clearInterval(fadeInterval); } }, stepTime);
+    }
+
+    function spinWheel() {
+      if(spinning) return; spinning=true;
+      const sound = document.getElementById("airplaneSound"); sound.currentTime=0; sound.volume=1; sound.play();
+      let spinAngle = Math.random()*360+1080; let duration=4000; let start=null;
+      function animate(timestamp) {
+        if(!start) start=timestamp;
+        let progress=(timestamp-start)/duration;
+        let easeOut = 1 - Math.pow(1-progress,3);
+        let current = spinAngle*easeOut;
+        angle = current*Math.PI/180;
+        drawWheel();
+        if(progress<1){ requestAnimationFrame(animate); }
+        else{ spinning=false; fadeOutSound(sound,duration*0.2); pickCategory(); }
+      }
+      requestAnimationFrame(animate);
+    }
+
+    function pickCategory() {
+      let deg = (angle*180/Math.PI)%360;
+      let index = Math.floor((categories.length-(deg/360*categories.length))%categories.length);
+      let selected = categories[index];
+      confetti({particleCount:120,spread:70,origin:{y:0.6}});
+      let qList = questions[selected];
+      let question = qList.length>0 ? qList[Math.floor(Math.random()*qList.length)] : "No questions added for "+selected+" yet.";
+      document.getElementById("questionBox").innerText = selected+": "+question;
+    }
+
+    function resetWheel() { if(spinning) return; angle=0; drawWheel(); document.getElementById("questionBox").innerText=""; }
+
+    drawWheel(); renderQuestionList();
+  </script>
+</body>
+</html>
